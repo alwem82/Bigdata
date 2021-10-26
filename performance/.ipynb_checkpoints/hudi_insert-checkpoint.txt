@@ -1,0 +1,115 @@
+%%configure -f
+{ "conf": {
+            "spark.jars":"hdfs:///apps/hudi/lib/hudi-spark-bundle.jar,hdfs:///apps/hudi/lib/spark-avro.jar",
+            "spark.serializer":"org.apache.spark.serializer.KryoSerializer",
+            "spark.sql.hive.convertMetastoreParquet":"false"
+          }}
+
+
+import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.functions._
+import org.apache.hudi.DataSourceWriteOptions
+import org.apache.hudi.config.HoodieWriteConfig
+import org.apache.hudi.hive.MultiPartKeysValueExtractor
+import org.apache.hudi.QuickstartUtils._
+import scala.collection.JavaConversions._
+import org.apache.spark.sql.SaveMode._
+import org.apache.hudi.DataSourceReadOptions._
+import org.apache.hudi.DataSourceWriteOptions._
+import org.apache.hudi.config.HoodieWriteConfig._
+
+
+
+val inputDataPath = "s3://octank-datalake-seba/hstaging/home_loan/previous_application/"
+val hudiTableName = "previous_application"
+val hudiTablePath = "s3://octank-datalake-seba/hstandardization/home_loan/" + hudiTableName
+
+val inputDF = spark.read.option("header","true").parquet(inputDataPath)
+
+inputDF.count()
+
+
+inputDF.select("SK_ID_PREV").distinct().count()
+
+
+//대소문자를 구별함!!!!!!
+val hudiOptions = Map[String,String](
+    HoodieWriteConfig.TABLE_NAME -> hudiTableName,
+    DataSourceWriteOptions.TABLE_TYPE_OPT_KEY -> "COPY_ON_WRITE",
+    DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY -> "sk_id_prev", 
+    DataSourceWriteOptions.PRECOMBINE_FIELD_OPT_KEY -> "sk_id_prev", 
+    DataSourceWriteOptions.HIVE_SYNC_ENABLED_OPT_KEY -> "true", 
+    DataSourceWriteOptions.HIVE_TABLE_OPT_KEY -> hudiTableName)
+
+
+    inputDF.write.format("org.apache.hudi").
+    option(DataSourceWriteOptions.OPERATION_OPT_KEY, DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL).
+    options(hudiOptions).
+    mode(SaveMode.Overwrite).
+    save(hudiTablePath)
+
+
+val hudiTableName = "pii_list"
+val inputDataPath = "s3://octank-datalake-seba/hstaging/home_loan/"+hudiTableName
+val hudiTablePath = "s3://octank-datalake-seba/hstandardization/home_loan/" + hudiTableName
+
+val inputDF = spark.read.option("header","true").parquet(inputDataPath)
+
+inputDF.count()
+
+val hudiOptions = Map[String,String](
+    HoodieWriteConfig.TABLE_NAME -> hudiTableName,
+    DataSourceWriteOptions.TABLE_TYPE_OPT_KEY -> "COPY_ON_WRITE",
+    DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY -> "id", 
+    DataSourceWriteOptions.PRECOMBINE_FIELD_OPT_KEY -> "id", 
+    DataSourceWriteOptions.HIVE_SYNC_ENABLED_OPT_KEY -> "true", 
+    DataSourceWriteOptions.HIVE_TABLE_OPT_KEY -> hudiTableName)
+
+
+inputDF.write.format("org.apache.hudi").
+    option(DataSourceWriteOptions.OPERATION_OPT_KEY, DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL).
+    options(hudiOptions).
+    mode(SaveMode.Overwrite).
+    save(hudiTablePath)
+
+
+val papplicationDF = spark.read.format("org.apache.hudi").load("s3://octank-datalake-seba/hstandardization/home_loan/previous_application/*/*")
+papplicationDF.count()
+
+val piilistDF = spark.read.format("org.apache.hudi").load("s3://octank-datalake-seba/hstandardization/home_loan/pii_list/*/*")
+piilistDF.count()
+
+papplicationDF.createOrReplaceTempView("previous_application")
+
+piilistDF.createOrReplaceTempView("pii_list")
+
+val query = "select * from previous_application where sk_id_prev in (select id from pii_list)"
+
+val df_del = spark.sql(query)
+
+df_del.show()
+
+val inputDataPath = "s3://octank-datalake-seba/hstaging/home_loan/previous_application/"
+val hudiTableName = "previous_application"
+val hudiTablePath = "s3://octank-datalake-seba/hstandardization/home_loan/" + hudiTableName
+
+val hudiOptions = Map[String,String](
+    HoodieWriteConfig.TABLE_NAME -> hudiTableName,
+    DataSourceWriteOptions.TABLE_TYPE_OPT_KEY -> "COPY_ON_WRITE",
+    DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY -> "sk_id_prev", 
+    DataSourceWriteOptions.PRECOMBINE_FIELD_OPT_KEY -> "sk_id_prev", 
+    DataSourceWriteOptions.HIVE_SYNC_ENABLED_OPT_KEY -> "true", 
+    DataSourceWriteOptions.HIVE_TABLE_OPT_KEY -> hudiTableName)
+
+
+df_del.write.
+format("org.apache.hudi").
+options(hudiOptions).
+option(DataSourceWriteOptions.OPERATION_OPT_KEY,DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL).
+option(DataSourceWriteOptions.PAYLOAD_CLASS_OPT_KEY,"org.apache.hudi.common.model.EmptyHoodieRecordPayload").
+mode(SaveMode.Append).
+save(hudiTablePath)
+
+
+val snapshotQueryDF = spark.read.format("org.apache.hudi").load("s3://octank-datalake-seba/hstandardization/home_loan/previous_application/*/*")
+snapshotQueryDF.count()

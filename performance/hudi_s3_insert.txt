@@ -1,0 +1,100 @@
+%%configure -f
+{ "conf": {
+            "spark.jars":"hdfs:///apps/hudi/lib/hudi-spark-bundle.jar,hdfs:///apps/hudi/lib/spark-avro.jar",
+            "spark.serializer":"org.apache.spark.serializer.KryoSerializer",
+            "spark.sql.hive.convertMetastoreParquet":"false"
+          }}
+
+
+import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.functions._
+import org.apache.hudi.DataSourceReadOptions
+import org.apache.hudi.DataSourceWriteOptions
+import org.apache.hudi.config.HoodieWriteConfig
+import org.apache.hudi.hive.MultiPartKeysValueExtractor
+import org.apache.hudi.QuickstartUtils._
+import scala.collection.JavaConversions._
+import java.util.concurrent.TimeUnit.NANOSECONDS
+
+
+val inputDataPath = "s3://octank-datalake-seba/performance/hudi/staging/"
+val hudiTableName = "performance_hudi_emrfs_stand"
+val hudiTablePath = "s3://octank-datalake-seba/performance/hudi/standardization/" + hudiTableName
+var sparkLoadPath = "s3://octank-datalake-seba/performance/hudi/standardization/*/*"
+var viewName = "performance_hudi_emrfs_stand_vw"
+var query ="select id,col1,col2,col3,col4,col5,col6,'JungHoiJong' as col7,col8,col9,col10,col11,col12,col13,col14,col15,col16,col17,col18 from performance_hudi_emrfs_stand_vw where where (col7 like 'A%') and CHAR_LENGTH(col7) > 15"
+var query2 = "select * from performance_hudi_emrfs_stand_vw where col7='JungHoiJong'"
+
+val inputDF = spark.read.option("header","true").parquet(inputDataPath)
+spark.time(inputDF.count())
+
+
+// insert count (from staging to standardization)
+val hudiOptions = Map[String,String](
+    HoodieWriteConfig.TABLE_NAME -> hudiTableName,
+    DataSourceWriteOptions.TABLE_TYPE_OPT_KEY -> "COPY_ON_WRITE",
+    DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY -> "id", 
+    DataSourceWriteOptions.PRECOMBINE_FIELD_OPT_KEY -> "id", 
+    DataSourceWriteOptions.HIVE_SYNC_ENABLED_OPT_KEY -> "true", 
+    DataSourceWriteOptions.HIVE_TABLE_OPT_KEY -> hudiTableName)
+
+
+spark.time(
+    inputDF.write.format("org.apache.hudi").
+    option(DataSourceWriteOptions.OPERATION_OPT_KEY, DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL).
+    options(hudiOptions).
+    mode(SaveMode.Overwrite).
+    save(hudiTablePath)
+    )
+
+
+val snapshotQueryDF = spark.read.format("org.apache.hudi").load(sparkLoadPath)
+snapshotQueryDF.createOrReplaceTempView(viewName)
+snapshotQueryDF.count()
+
+val updateDF = spark.sql(query)
+
+// update count (update data in standardization)
+spark.time(
+    updateDF.write.format("org.apache.hudi").
+    option(DataSourceWriteOptions.OPERATION_OPT_KEY, DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL).
+    options(hudiOptions).
+    mode(SaveMode.Append).
+    save(hudiTablePath)
+    )
+
+val snapshotQueryDF = spark.read.format("org.apache.hudi").load(sparkLoadPath)
+
+
+snapshotQueryDF.count()
+snapshotQueryDF.createOrReplaceTempView(viewName)
+val checkDF = spark.sql(query2)
+checkDF.count()
+
+// delete count (delete data in standardization)
+val snapshotQueryDF = spark.read.format("org.apache.hudi").load(sparkLoadPath)
+snapshotQueryDF.count()
+snapshotQueryDF.createOrReplaceTempView(viewName)
+val deleteDF = spark.sql(query2)
+
+
+val hudiOptions = Map[String,String](
+    HoodieWriteConfig.TABLE_NAME -> hudiTableName,
+    DataSourceWriteOptions.TABLE_TYPE_OPT_KEY -> "COPY_ON_WRITE",
+    DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY -> "id", 
+    DataSourceWriteOptions.PRECOMBINE_FIELD_OPT_KEY -> "id", 
+    DataSourceWriteOptions.HIVE_SYNC_ENABLED_OPT_KEY -> "true", 
+    DataSourceWriteOptions.HIVE_TABLE_OPT_KEY -> hudiTableName)
+
+spark.time(
+    deleteDF.write.
+    format("org.apache.hudi").
+    options(hudiOptions).
+    option(DataSourceWriteOptions.OPERATION_OPT_KEY,DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL).
+    option(DataSourceWriteOptions.PAYLOAD_CLASS_OPT_KEY,"org.apache.hudi.common.model.EmptyHoodieRecordPayload").
+    mode(SaveMode.Append).
+    save(hudiTablePath)
+    )
+
+val snapshotQueryDF = spark.read.format("org.apache.hudi").load(sparkLoadPath)
+snapshotQueryDF.count()

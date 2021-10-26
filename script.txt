@@ -1,0 +1,832 @@
+ABP 3차 구현 준비
+
+
+1-Master노드에 접속
+1-1 Hive3 version으로 install 하기
+1-2 cloud9생성 후 cloud9에 pem key upload
+1-3 master node에 접속 방법 : ssh -i SASebastian.pem hadoop@ec2-13-125-221-251.ap-northeast-2.compute.amazonaws.com
+1-4 Master node security group에 cloud9 IP SSH 22번 포트 열어줘야함
+
+Tez-UI : http://ec2-13-209-26-180.ap-northeast-2.compute.amazonaws.com:8080/tez-ui
+
+
+2-hudi를 위한 library file 복사
+2-1 hdfs dfs -mkdir -p /apps/hudi/lib
+2-2 hdfs dfs -copyFromLocal /usr/lib/hudi/hudi-spark-bundle.jar /apps/hudi/lib/hudi-spark-bundle.jar
+2-3 hdfs dfs -copyFromLocal /usr/lib/spark/external/lib/spark-avro.jar /apps/hudi/lib/spark-avro.jar
+
+
+3-EMR 관리 페이지 접근
+3-1 Security group에 22번 포트가 열려 있어야 함
+3-2 3-3 8888을 필요한 포트 번호로 변경한다.(tez UI : 8080 / Hue : 8888 / HDFS Name Node : 9870 / Spark History : 18080 / Resource manager / 8088)
+3-3 ssh -i ~/SASebastian.pem -N -L 8157:ec2-13-209-26-180.ap-northeast-2.compute.amazonaws.com:8088 hadoop@ec2-13-209-26-180.ap-northeast-2.compute.amazonaws.com
+3-4 로컬 PC의 브라우저에서 http://localhost:8157/cluster 접속
+
+
+ssh -i ~/SASebastian.pem -N -L 8157:ec2-13-209-26-180.ap-northeast-2.compute.amazonaws.com:8088 hadoop@ec2-13-209-26-180.ap-northeast-2.compute.amazonaws.com
+http://localhost:8157/tez-ui/
+http://localhost:8157/
+
+4-hive실행엔진설정 (/etc/hive/conf/hive-site.xml)
+https://wikidocs.net/23573
+set hive.execution.engine=mr;
+set hive.execution.engine=tez;
+set hive.execution.engine=spark;
+
+5-hql실행방법
+hive -f test.hql 
+
+3- Hive에서 S3연동하여 테이블생성
+
+3-1 hive CIUD가 되는 설정을 아래와 같이 수정해야 함
+set hive.exec.dynamic.partition.mode=nonstrict;
+set hive.support.concurrency=true;
+set hive.txn.manager=org.apache.hadoop.hive.ql.lockmgr.DbTxnManager;
+#set hive.enforce.bucketing=true;
+
+
+
+
+3-3 기타 테이블 설정 확인 및 변경 방법
+Describe formatted bureau_balance_orc;
+
+Show tblproperties bureau_balance_orc;
+
+Delete from bureau_balance_orc where status=test3;
+
+Insert into bureau_balance_orc select * from bureau_balance;
+
+insert into test6 values (1,'test');
+
+
+3-4 S3를 hive테이블로 설정하기
+
+
+4- EMR mysql to s3 via sqoop
+https://medium.com/@sajithdoo/aws-emr-cluster-with-sqoop-intergrating-rds-mysql-data-table-to-s3-bucket-5f3c1976e2
+
+5-Mysql Jdbc driver copy
+aws s3 cp s3://octank-datalake-seba/files/mysql-connector-java-8.0.26.jar  /usr/lib/sqoop/lib/
+
+6- root로 전환하기
+Sudo su
+
+7- swoop mysql connection
+sqoop eval --connect "jdbc:mysql://octank-dw.cluster-cjbigvs4p6wf.ap-northeast-2.rds.amazonaws.com:3306/octank”  --query "select count(*) from octank.Persons” --username admin -P
+
+sqoop eval --connect jdbc:mysql://octank-dw.cluster-ro-cjbigvs4p6wf.ap-northeast-2.rds.amazonaws.com:3306/octank --query "select * from octank.Persons” --username admin -P
+
+sqoop import --connect "jdbc:mysql://octank-dw.cluster-ro-cjbigvs4p6wf.ap-northeast-2.rds.amazonaws.com:3306/octank" --table Persons --target-dir /user/hadoop/EVENT --username admin -P -m 1
+
+EMRFS
+https://docs.aws.amazon.com/emr/latest/ManagementGuide/enable-consistent-view.html
+
+s3로 import
+https://docs.cloudera.com/documentation/enterprise/6/6.3/topics/admin_sqoop_s3_import.html
+
+
+
+8- 참고싸이트
+https://stackoverflow.com/questions/42170696/hive-with-emrfs
+
+New – Insert, Update, Delete Data on S3 with Amazon EMR and Apache Hudi
+https://aws.amazon.com/ko/blogs/aws/new-insert-update-delete-data-on-s3-with-amazon-emr-and-apache-hudi/
+https://ichi.pro/ko/amazon-emreseo-apache-hudileul-sayonghan-deiteo-leikeu-byeongyeong-deiteo-kaebcheo-cdc-2-bu-peuloseseu-112031641205579
+https://cwiki.apache.org/confluence/display/HUDI/2020/01/15/Delete+support+in+Hudi
+
+9-hudi 접속 방법
+/usr/lib/hudi/cli/bin/hudi-cli.sh
+
+connect --path s3://octank-datalake-seba/input/
+https://www.youtube.com/watch?v=_ckNyL_Nr1A
+https://blog.actorsfit.in/a?ID=01600-6609ae1c-c9c4-4dbd-b1b9-7d0050ecc90b
+
+10-spark-shell
+<shell에서 바로 실행 >
+
+spark-shell \
+--conf "spark.serializer=org.apache.spark.serializer.KryoSerializer" \
+--conf "spark.sql.hive.convertMetastoreParquet=false" \
+--jars /usr/lib/hudi/hudi-spark-bundle.jar,/usr/lib/spark/external/lib/spark-avro.jar
+
+
+11-databrew blog
+https://aws.amazon.com/ko/blogs/big-data/data-preparation-using-an-amazon-rds-for-mysql-database-with-aws-glue-databrew/
+
+OA account
+Transit gateway
+Sandbox
+glue를 통한 S3로 데이터 전송
+
+12-glue mysql jdbc connection
+jdbc:mysql://octank-dw.cluster-cjbigvs4p6wf.ap-northeast-2.rds.amazonaws.com:3306/?user=admin
+
+
+
+s3://buckets/octank-datalake-seba/input/
+
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::162680125837:role/GlueStudioWorkshopRole"
+            },
+            "Action": "s3:ListBucket",
+            "Resource": "arn:aws:s3:::octank-datalake-seba"
+        },
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::162680125837:role/GlueStudioWorkshopRole"
+            },
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:DeleteObject"
+            ],
+            "Resource": "arn:aws:s3:::octank-datalake-seba/*"
+        }
+    ]
+}
+
+
+
+S3 권한주기
+https://aws.amazon.com/ko/blogs/security/writing-iam-policies-how-to-grant-access-to-an-amazon-s3-bucket/
+https://docs.aws.amazon.com/ko_kr/glue/latest/dg/attach-policy-iam-user.html
+
+
+12 athena접속하기
+12-1 Athena to Hive : Metastore : thrift://ip-10-0-0-117.ap-northeast-2.compute.internal:9083
+Security Group :ElasticMapReduce-master / sg-0bd4a5a98f9bd8862
+Subnet: Octank-public / subnet-0e57d9911a35cb8e1 
+
+
+2-s3데이터 hive로 연동하기
+
+<previous application>
+CREATE EXTERNAL TABLE previous_application(
+sk_id_prev double,
+sk_id_curr double,
+name_contract_type varchar(256),
+amt_annuity double,
+amt_application double,
+amt_credit double,
+amt_down_payment double,
+amt_goods_price double,
+weekday_appr_process_start varchar(256),
+hour_appr_process_start double,
+flag_last_appl_per_contract varchar(256),
+nflag_last_appl_in_day double,
+rate_down_payment varchar(256),
+rate_interest_primary double,
+rate_interest_privileged double,
+name_cash_loan_purpose varchar(256),
+name_contract_status varchar(256),
+days_decision double,
+name_payment_type varchar(256),
+code_reject_reason varchar(256),
+name_type_suite varchar(256),
+name_client_type varchar(256),
+name_goods_category varchar(256),
+name_portfolio varchar(256),
+name_product_type varchar(256),
+channel_type varchar(256),
+sellerplace_area double,
+name_seller_industry varchar(256),
+cnt_payment double,
+name_yield_group varchar(256),
+product_combination varchar(256),
+days_first_drawing double,
+days_first_due double,
+days_last_due_1st_version double,
+days_last_due double,
+days_termination double,
+nflag_insured_on_approval double)
+  STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/previous_application/';
+
+CREATE TABLE previous_application_orc(
+sk_id_prev double,
+sk_id_curr double,
+name_contract_type varchar(256),
+amt_annuity double,
+amt_application double,
+amt_credit double,
+amt_down_payment double,
+amt_goods_price double,
+weekday_appr_process_start varchar(256),
+hour_appr_process_start double,
+flag_last_appl_per_contract varchar(256),
+nflag_last_appl_in_day double,
+rate_down_payment varchar(256),
+rate_interest_primary double,
+rate_interest_privileged double,
+name_cash_loan_purpose varchar(256),
+name_contract_status varchar(256),
+days_decision double,
+name_payment_type varchar(256),
+code_reject_reason varchar(256),
+name_type_suite varchar(256),
+name_client_type varchar(256),
+name_goods_category varchar(256),
+name_portfolio varchar(256),
+name_product_type varchar(256),
+channel_type varchar(256),
+sellerplace_area double,
+name_seller_industry varchar(256),
+cnt_payment double,
+name_yield_group varchar(256),
+product_combination varchar(256),
+days_first_drawing double,
+days_first_due double,
+days_last_due_1st_version double,
+days_last_due double,
+days_termination double,
+nflag_insured_on_approval double)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
+WITH SERDEPROPERTIES (
+'separatorChar' = ',',
+'serialization.format' = ',',
+'field.delim' = ','
+)
+STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/previous_application_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+
+Insert into previous_application_orc select * from previous_application;
+
+
+
+
+<application_train>
+Create external table application_train(
+sk_id_curr double,
+target double,
+name_contract_type varchar(256),
+code_gender varchar(256),
+flag_own_car varchar(256),
+flag_own_realty varchar(256),
+cnt_children double,
+amt_income_total double,
+amt_credit double,
+amt_annuity double,
+amt_goods_price double,
+name_type_suite varchar(256),
+name_income_type varchar(256),
+name_education_type varchar(256),
+name_family_status varchar(256),
+name_housing_type varchar(256),
+region_population_relative double,
+days_birth double,
+days_employed double,
+days_registration double,
+days_id_publish double,
+own_car_age double,
+flag_mobil double,
+flag_emp_phone double,
+flag_work_phone double,
+flag_cont_mobile double,
+flag_phone double,
+flag_email double,
+occupation_type varchar(256),
+cnt_fam_members double,
+region_rating_client double,
+region_rating_client_w_city double,
+weekday_appr_process_start varchar(256),
+hour_appr_process_start double,
+reg_region_not_live_region double,
+reg_region_not_work_region double,
+live_region_not_work_region double,
+reg_city_not_live_city double,
+reg_city_not_work_city double,
+live_city_not_work_city double,
+organization_type varchar(256),
+ext_source_1 double,
+ext_source_2 double,
+ext_source_3 double,
+apartments_avg double,
+basementarea_avg double,
+years_beginexpluatation_avg double,
+years_build_avg double,
+commonarea_avg double,
+elevators_avg double,
+entrances_avg double,
+floorsmax_avg double,
+floorsmin_avg double,
+landarea_avg double,
+livingapartments_avg double,
+livingarea_avg double,
+nonlivingapartments_avg double,
+nonlivingarea_avg double,
+apartments_mode double,
+basementarea_mode double,
+years_beginexpluatation_mode double,
+years_build_mode double,
+commonarea_mode double,
+elevators_mode double,
+entrances_mode double,
+floorsmax_mode double,
+floorsmin_mode double,
+landarea_mode double,
+livingapartments_mode double,
+livingarea_mode double,
+nonlivingapartments_mode double,
+nonlivingarea_mode double,
+apartments_medi double,
+basementarea_medi double,
+years_beginexpluatation_medi double,
+years_build_medi double,
+commonarea_medi double,
+elevators_medi double,
+entrances_medi double,
+floorsmax_medi double,
+floorsmin_medi double,
+landarea_medi double,
+livingapartments_medi double,
+livingarea_medi double,
+nonlivingapartments_medi double,
+nonlivingarea_medi double,
+fondkapremont_mode varchar(256),
+housetype_mode varchar(256),
+totalarea_mode double,
+wallsmaterial_mode varchar(256),
+emergencystate_mode varchar(256),
+obs_30_cnt_social_circle double,
+def_30_cnt_social_circle double,
+obs_60_cnt_social_circle double,
+def_60_cnt_social_circle double,
+days_last_phone_change double,
+flag_document_2 double,
+flag_document_3 double,
+flag_document_4 double,
+flag_document_5 Double,
+flag_document_6 Double,
+flag_document_7 Double,
+flag_document_8 Double,
+flag_document_9 Double,
+flag_document_10 Double,
+flag_document_11 Double,
+flag_document_12 Double,
+flag_document_13 Double,
+flag_document_14 Double,
+flag_document_15 Double,
+flag_document_16 Double,
+flag_document_17 Double,
+flag_document_18 Double,
+flag_document_19 Double,
+flag_document_20 Double,
+flag_document_21 Double,
+amt_req_credit_bureau_hour Double,
+amt_req_credit_bureau_day Double,
+amt_req_credit_bureau_week Double,
+amt_req_credit_bureau_mon Double,
+amt_req_credit_bureau_qrt Double,
+amt_req_credit_bureau_year Double
+)  STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/application_train/';
+
+
+create table application_train_orc(
+sk_id_curr double,
+target double,
+name_contract_type varchar(256),
+code_gender varchar(256),
+flag_own_car varchar(256),
+flag_own_realty varchar(256),
+cnt_children double,
+amt_income_total double,
+amt_credit double,
+amt_annuity double,
+amt_goods_price double,
+name_type_suite varchar(256),
+name_income_type varchar(256),
+name_education_type varchar(256),
+name_family_status varchar(256),
+name_housing_type varchar(256),
+region_population_relative double,
+days_birth double,
+days_employed double,
+days_registration double,
+days_id_publish double,
+own_car_age double,
+flag_mobil double,
+flag_emp_phone double,
+flag_work_phone double,
+flag_cont_mobile double,
+flag_phone double,
+flag_email double,
+occupation_type varchar(256),
+cnt_fam_members double,
+region_rating_client double,
+region_rating_client_w_city double,
+weekday_appr_process_start varchar(256),
+hour_appr_process_start double,
+reg_region_not_live_region double,
+reg_region_not_work_region double,
+live_region_not_work_region double,
+reg_city_not_live_city double,
+reg_city_not_work_city double,
+live_city_not_work_city double,
+organization_type varchar(256),
+ext_source_1 double,
+ext_source_2 double,
+ext_source_3 double,
+apartments_avg double,
+basementarea_avg double,
+years_beginexpluatation_avg double,
+years_build_avg double,
+commonarea_avg double,
+elevators_avg double,
+entrances_avg double,
+floorsmax_avg double,
+floorsmin_avg double,
+landarea_avg double,
+livingapartments_avg double,
+livingarea_avg double,
+nonlivingapartments_avg double,
+nonlivingarea_avg double,
+apartments_mode double,
+basementarea_mode double,
+years_beginexpluatation_mode double,
+years_build_mode double,
+commonarea_mode double,
+elevators_mode double,
+entrances_mode double,
+floorsmax_mode double,
+floorsmin_mode double,
+landarea_mode double,
+livingapartments_mode double,
+livingarea_mode double,
+nonlivingapartments_mode double,
+nonlivingarea_mode double,
+apartments_medi double,
+basementarea_medi double,
+years_beginexpluatation_medi double,
+years_build_medi double,
+commonarea_medi double,
+elevators_medi double,
+entrances_medi double,
+floorsmax_medi double,
+floorsmin_medi double,
+landarea_medi double,
+livingapartments_medi double,
+livingarea_medi double,
+nonlivingapartments_medi double,
+nonlivingarea_medi double,
+fondkapremont_mode varchar(256),
+housetype_mode varchar(256),
+totalarea_mode double,
+wallsmaterial_mode varchar(256),
+emergencystate_mode varchar(256),
+obs_30_cnt_social_circle double,
+def_30_cnt_social_circle double,
+obs_60_cnt_social_circle double,
+def_60_cnt_social_circle double,
+days_last_phone_change double,
+flag_document_2 double,
+flag_document_3 double,
+flag_document_4 double,
+flag_document_5 Double,
+flag_document_6 Double,
+flag_document_7 Double,
+flag_document_8 Double,
+flag_document_9 Double,
+flag_document_10 Double,
+flag_document_11 Double,
+flag_document_12 Double,
+flag_document_13 Double,
+flag_document_14 Double,
+flag_document_15 Double,
+flag_document_16 Double,
+flag_document_17 Double,
+flag_document_18 Double,
+flag_document_19 Double,
+flag_document_20 Double,
+flag_document_21 Double,
+amt_req_credit_bureau_hour Double,
+amt_req_credit_bureau_day Double,
+amt_req_credit_bureau_week Double,
+amt_req_credit_bureau_mon Double,
+amt_req_credit_bureau_qrt Double,
+amt_req_credit_bureau_year Double
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
+WITH SERDEPROPERTIES (
+'separatorChar' = ',',
+'serialization.format' = ',',
+'field.delim' = ','
+)
+STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/application_train_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+
+Insert into application_train_orc select * from application_train;
+
+
+<credit_card_balance>
+
+Create external table credit_card_balance(
+SK_ID_PREV double,
+SK_ID_CURR double,
+MONTHS_BALANCE double,
+AMT_BALANCE double,
+AMT_CREDIT_LIMIT_ACTUAL double,
+AMT_DRAWINGS_ATM_CURRENT double,
+AMT_DRAWINGS_CURRENT double,
+AMT_DRAWINGS_OTHER_CURRENT double,
+AMT_DRAWINGS_POS_CURRENT double,
+AMT_INST_MIN_REGULARITY double,
+AMT_PAYMENT_CURRENT double,
+AMT_PAYMENT_TOTAL_CURRENT double,
+AMT_RECEIVABLE_PRINCIPAL double,
+AMT_RECIVABLE double,
+AMT_TOTAL_RECEIVABLE double,
+CNT_DRAWINGS_ATM_CURRENT double,
+CNT_DRAWINGS_CURRENT double,
+CNT_DRAWINGS_OTHER_CURRENT double,
+CNT_DRAWINGS_POS_CURRENT double,
+CNT_INSTALMENT_MATURE_CUM double,
+NAME_CONTRACT_STATUS varchar(256),
+SK_DPD double,
+SK_DPD_DEF double
+)STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/credit_card_balance/';
+
+Create table credit_card_balance_orc(
+SK_ID_PREV double,
+SK_ID_CURR double,
+MONTHS_BALANCE double,
+AMT_BALANCE double,
+AMT_CREDIT_LIMIT_ACTUAL double,
+AMT_DRAWINGS_ATM_CURRENT double,
+AMT_DRAWINGS_CURRENT double,
+AMT_DRAWINGS_OTHER_CURRENT double,
+AMT_DRAWINGS_POS_CURRENT double,
+AMT_INST_MIN_REGULARITY double,
+AMT_PAYMENT_CURRENT double,
+AMT_PAYMENT_TOTAL_CURRENT double,
+AMT_RECEIVABLE_PRINCIPAL double,
+AMT_RECIVABLE double,
+AMT_TOTAL_RECEIVABLE double,
+CNT_DRAWINGS_ATM_CURRENT double,
+CNT_DRAWINGS_CURRENT double,
+CNT_DRAWINGS_OTHER_CURRENT double,
+CNT_DRAWINGS_POS_CURRENT double,
+CNT_INSTALMENT_MATURE_CUM double,
+NAME_CONTRACT_STATUS varchar(256),
+SK_DPD double,
+SK_DPD_DEF double
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
+WITH SERDEPROPERTIES (
+'separatorChar' = ',',
+'serialization.format' = ',',
+'field.delim' = ','
+)
+STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/credit_card_balance_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+
+Insert into credit_card_balance_orc select * from credit_card_balance;
+
+
+
+<bureau_balance>
+
+Create external table bureau_balance(
+SK_ID_BUREAU double,
+MONTHS_BALANCE double,
+STATUS varchar(256)
+)STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/bureau_balance/';
+
+
+Create table bureau_balance_orc(
+SK_ID_BUREAU double,
+MONTHS_BALANCE double,
+STATUS varchar(256)
+)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.ql.io.orc.OrcSerde'
+WITH SERDEPROPERTIES (
+'separatorChar' = ',',
+'serialization.format' = ',',
+'field.delim' = ','
+)
+STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/bureau_balance_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+Insert into bureau_balance_orc select * from bureau_balance;
+
+
+
+<bureau>
+
+create external table bureau(
+sk_id_curr double,
+sk_id_bureau double,
+credit_active varchar(256),
+credit_currency varchar(256),
+days_credit double,
+credit_day_overdue double,
+days_credit_enddate double,
+days_enddate_fact double,
+amt_credit_max_overdue double,
+cnt_credit_prolong double,
+amt_credit_sum double,
+amt_credit_sum_debt double,
+amt_credit_sum_limit double,
+amt_credit_sum_overdue double,
+credit_type varchar(256),
+days_credit_update double,
+amt_annuity double
+)STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/bureau/';
+
+
+
+create table bureau_orc(
+sk_id_curr double,
+sk_id_bureau double,
+credit_active varchar(256),
+credit_currency varchar(256),
+days_credit double,
+credit_day_overdue double,
+days_credit_enddate double,
+days_enddate_fact double,
+amt_credit_max_overdue double,
+cnt_credit_prolong double,
+amt_credit_sum double,
+amt_credit_sum_debt double,
+amt_credit_sum_limit double,
+amt_credit_sum_overdue double,
+credit_type varchar(256),
+days_credit_update double,
+amt_annuity double
+)STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/bureau_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+Insert into bureau_orc select * from bureau;
+
+<pos_cash_balance>
+
+Create external table pos_cash_balance(
+SK_ID_PREV double,
+SK_ID_CURR double,
+MONTHS_BALANCE double,
+CNT_INSTALMENT double,
+CNT_INSTALMENT_FUTURE double,
+NAME_CONTRACT_STATUS varchar(256),
+SK_DPD double,
+SK_DPD_DEF double
+)STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/pos_cash_balance/';
+
+
+Create table pos_cash_balance_orc(
+SK_ID_PREV double,
+SK_ID_CURR double,
+MONTHS_BALANCE double,
+CNT_INSTALMENT double,
+CNT_INSTALMENT_FUTURE double,
+NAME_CONTRACT_STATUS varchar(256),
+SK_DPD double,
+SK_DPD_DEF double
+)STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/pos_cash_balance_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+Insert into pos_cash_balance_orc select * from pos_cash_balance;
+
+<installments_payments>
+
+Create external table installments_payments(
+SK_ID_PREV double,
+SK_ID_CURR double,
+NUM_INSTALMENT_VERSION double,
+NUM_INSTALMENT_NUMBER double,
+DAYS_INSTALMENT double,
+DAYS_ENTRY_PAYMENT double,
+AMT_INSTALMENT double,
+AMT_PAYMENT double
+)STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/installments_payments/';
+
+Create table installments_payments_orc(
+SK_ID_PREV double,
+SK_ID_CURR double,
+NUM_INSTALMENT_VERSION double,
+NUM_INSTALMENT_NUMBER double,
+DAYS_INSTALMENT double,
+DAYS_ENTRY_PAYMENT double,
+AMT_INSTALMENT double,
+AMT_PAYMENT double
+)STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/installments_payments_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+Insert into installments_payments_orc select * from installments_payments;
+
+
+<pii_list>
+Create external table pii_list(
+ID double
+)STORED AS ORC
+  LOCATION
+  's3://octank-datalake-seba/home_loan/pii_list/';
+
+
+Create table pii_list_orc(
+ID double
+)STORED AS INPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcInputFormat'
+OUTPUTFORMAT 'org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat'
+LOCATION 's3://octank-datalake-seba/home_loan_acid/pii_list_orc/'
+TBLPROPERTIES ( 
+'transactional'='true',
+'transactional_properties'='default',
+'transient_lastDdlTime'='1555090610'
+);
+
+
+
+
+
+aws s3 cp s3://amazon-vm-emr-support/patch_and_install_vm_agent.sh s3://octank-datalake-seba/patch_and_install_vm_agent.sh
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
